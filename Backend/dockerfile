@@ -1,0 +1,43 @@
+# Kalakriti Backend Container Specification
+FROM python:3.11-slim AS base
+
+# Python runtime configuration
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    U2NET_HOME=/home/kalakriti/.u2net
+
+# Install system dependencies (ffmpeg for audio normalization, libgomp1 for rembg/onnx)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libgomp1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create unprivileged application user
+RUN groupadd -g 1001 kalakriti && \
+    useradd -u 1001 -g kalakriti -m -s /bin/bash kalakriti
+
+WORKDIR /workspace/Backend
+
+# Install Python dependencies first for caching efficiency
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Create cache directory for rembg U2-Net model weights with appropriate permissions
+RUN mkdir -p /home/kalakriti/.u2net && \
+    chown -R kalakriti:kalakriti /home/kalakriti
+
+# Copy application source code
+COPY . /workspace/Backend
+
+# Assign workspace ownership to unprivileged user
+RUN chown -R kalakriti:kalakriti /workspace
+
+USER kalakriti
+
+EXPOSE 8000
+
+# Run FastAPI server
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
