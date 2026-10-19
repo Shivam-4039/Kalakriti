@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Kalakriti",
+    "slug": "kalakriti",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "kalakriti",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAFAFA"
+    },
+    "android": {
+      "package": "com.kalakriti.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#FAFAFA"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-sqlite",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Kalakriti needs camera access to photograph your products."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Kalakriti needs microphone access to record your voice."
+        }
+      ],
+      "expo-asset"
+    ]
+  }
+}

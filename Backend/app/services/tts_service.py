@@ -13,7 +13,23 @@ from app.utils.logger import logger
 
 SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
 
-# Mapping from ISO language code to Sarvam TTS voice configurations
+# Minimal valid WAV (silent) — prevents empty-body 500s when all TTS providers fail
+DUMMY_WAV_HEADER = (
+    b"RIFF"
+    b"\x24\x00\x00\x00"  # chunk size
+    b"WAVE"
+    b"fmt "
+    b"\x10\x00\x00\x00"  # subchunk1 size
+    b"\x01\x00"          # PCM
+    b"\x01\x00"          # mono
+    b"\x40\x1f\x00\x00"  # 8000 Hz
+    b"\x40\x1f\x00\x00"  # byte rate
+    b"\x01\x00"          # block align
+    b"\x08\x00"          # bits per sample
+    b"data"
+    b"\x00\x00\x00\x00"  # data size 0
+)
+
 SARVAM_VOICE_MAP = {
     "hi": {"language_code": "hi-IN", "speaker": "meera"},
     "bn": {"language_code": "bn-IN", "speaker": "tanushree"},
@@ -28,7 +44,6 @@ SARVAM_VOICE_MAP = {
     "en": {"language_code": "en-IN", "speaker": "meera"},
 }
 
-# Edge TTS voice fallback mapping
 EDGE_VOICE_MAP = {
     "hi": "hi-IN-SwaraNeural",
     "bn": "bn-IN-TanishaaNeural",
@@ -51,9 +66,9 @@ class TTSService:
             self.sarvam_key = str(raw_key or "")
 
     async def synthesize(self, text: str, language: str = "hi") -> bytes:
-        """Synthesizes text to audio bytes (Sarvam.ai -> Edge TTS fallback)."""
+        """Synthesizes text to audio bytes (Sarvam.ai -> Edge TTS -> dummy WAV)."""
         if not text or not text.strip():
-            return b""
+            return DUMMY_WAV_HEADER
 
         # Tier 1: Sarvam.ai TTS
         if self.sarvam_key and self.sarvam_key != "placeholder_sarvam_key":
@@ -63,25 +78,33 @@ class TTSService:
                 return audio_bytes
             except Exception as exc:
                 logger.warning(
-                    "Sarvam.ai TTS failed, falling back to Edge TTS. Error: {}", str(exc)
+                    "Sarvam.ai TTS failed, falling back to Edge TTS. Error: {}",
+                    str(exc),
                 )
 
-        # Tier 2: Edge TTS Fallback
+        # Tier 2: Edge TTS
         try:
             audio_bytes = await self._synthesize_edge_tts(text, language)
             logger.info("TTS succeeded via Edge TTS fallback (lang: {})", language)
             return audio_bytes
         except Exception as exc:
-            logger.error("All TTS providers failed. Edge TTS error: {}", str(exc))
-            return b""
+            logger.error(
+                "All TTS providers failed; returning dummy WAV. Edge TTS error: {}",
+                str(exc),
+            )
+            return DUMMY_WAV_HEADER
 
     async def synthesize_and_upload(
         self,
         text: str,
         language: str = "hi",
     ) -> str:
-        """Synthesizes text to speech, uploads to Supabase Storage, and returns public URL."""
+        """Synthesize, upload to Supabase Storage, return public URL."""
         audio_bytes = await self.synthesize(text, language)
+        if not audio_bytes or audio_bytes == DUMMY_WAV_HEADER:
+            # Still upload dummy so callers get a URL in dev, or return "" if you prefer
+            pass
+
         if not audio_bytes:
             return ""
 
@@ -95,7 +118,6 @@ class TTSService:
         return public_url or ""
 
     async def _synthesize_sarvam(self, text: str, language: str) -> bytes:
-        """Call Sarvam.ai Text-to-Speech API."""
         voice_cfg = SARVAM_VOICE_MAP.get(language, SARVAM_VOICE_MAP["hi"])
         headers = {
             "api-subscription-key": self.sarvam_key,
@@ -131,7 +153,6 @@ class TTSService:
             return base64.b64decode(audios[0])
 
     async def _synthesize_edge_tts(self, text: str, language: str) -> bytes:
-        """Call Edge TTS as fallback."""
         voice = EDGE_VOICE_MAP.get(language, "hi-IN-SwaraNeural")
         communicate = edge_tts.Communicate(text, voice)
         audio_stream = io.BytesIO()
@@ -154,5 +175,5 @@ async def synthesize_speech(
     text: str,
     language_code: str = "hi",
 ) -> bytes:
-    """Public top-level function for audio synthesis called by routers/voice.py."""
+    """Public top-level function for routers/voice.py."""
     return await tts_service.synthesize(text, language_code)
